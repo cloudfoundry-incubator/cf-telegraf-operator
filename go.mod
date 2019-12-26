@@ -1,4 +1,4 @@
-module code.cloudfoundry.org/loggregator-tools/telegraf
+module github.com/cloudfoundry-incubator/cf-telegraf-operator
 
 go 1.13
 
