@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/influxdata/toml"
-	"github.com/nats-io/nats.go"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,6 +12,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/influxdata/toml"
+	"github.com/nats-io/nats.go"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -171,8 +172,25 @@ func (cg *configGenerator) configModified(newCfgBytes []byte) bool {
 	return string(newCfgBytes) != string(oldCfgBytes)
 }
 
+type systemMetrics struct {
+	URLs []string `yaml:"urls"`
+}
 func (cg *configGenerator) buildScrapeUrls() []string {
 	var urls []string
+	var systemMetrics systemMetrics
+
+	systemUrlBytes, err := ioutil.ReadFile(appDir + "/system-ips.yaml")
+	if err != nil {
+		cg.logger.Printf("failed to read system-ips.yaml: %s\n", err)
+		systemUrlBytes = []byte{}
+	}
+
+	err = yaml.Unmarshal(systemUrlBytes, &systemMetrics)
+	if err != nil {
+		cg.logger.Printf("failed to unmarshal system IPs: %s\n", err)
+	}
+
+	urls = systemMetrics.URLs
 	for _, scrapeTarget := range cg.timestampedTargets {
 		for _, target := range scrapeTarget.scrapeTarget.Targets {
 			host, _, _ := net.SplitHostPort(target)
@@ -189,6 +207,7 @@ func (cg *configGenerator) buildScrapeUrls() []string {
 			urls = append(urls, fmt.Sprintf("https://%s", target))
 		}
 	}
+
 	sort.Strings(urls)
 	return urls
 }
