@@ -15,7 +15,7 @@
 #### Min instances: 2
 Due to application security groups, Telegraf cannot scrape the Diego Cell it is running on.
 This means there must be at least 2 instances of Telegraf (on different diego cells) in
-order to ingest all metrics.
+order to ingest all metrics (keep in mind this does result in [duplicate metrics](#duplicate-metrics)).
 
 #### Dropping metrics
 This promQL query will allow you to determine if a specific output is not keeping up.
