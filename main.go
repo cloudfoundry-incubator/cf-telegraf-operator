@@ -1,10 +1,9 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
-	"github.com/influxdata/toml"
-	"github.com/nats-io/nats.go"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,6 +14,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/influxdata/toml"
+	"github.com/nats-io/nats.go"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -24,6 +27,29 @@ const (
 )
 
 var cfInstanceIP = os.Getenv("CF_INSTANCE_IP")
+
+func main() {
+	logger := log.New(os.Stderr, "nats: ", 0)
+
+	err := os.Mkdir(telegrafConfigDir, os.ModePerm)
+	if err != nil {
+		logger.Fatalf("unable to make dir(%s): %s", telegrafConfigDir, err)
+	}
+
+	cg := configGenerator{
+		timestampedTargets: map[string]timestampedTarget{},
+		logger:             logger,
+		configTTL:          45 * time.Second,
+	}
+
+	natsConn := buildNatsConn(logger)
+	_, err = natsConn.Subscribe(ScrapeTargetQueueName, cg.generate)
+	if err != nil {
+		logger.Fatalf("failed to subscribe to %s: %s", ScrapeTargetQueueName, err)
+	}
+
+	cg.start()
+}
 
 type TelegrafConfig struct {
 	Inputs map[string]*PromInputConfig `toml:"inputs"`
@@ -57,29 +83,6 @@ type configGenerator struct {
 	sync.Mutex
 }
 
-func main() {
-	logger := log.New(os.Stderr, "nats: ", 0)
-
-	err := os.Mkdir(telegrafConfigDir, os.ModePerm)
-	if err != nil {
-		logger.Fatalf("unable to make dir(%s): %s", telegrafConfigDir, err)
-	}
-
-	cg := configGenerator{
-		timestampedTargets: map[string]timestampedTarget{},
-		logger:             logger,
-		configTTL:          45 * time.Second,
-	}
-
-	natsConn := buildNatsConn(logger)
-	_, err = natsConn.Subscribe(ScrapeTargetQueueName, cg.generate)
-	if err != nil {
-		logger.Fatalf("failed to subscribe to %s: %s", ScrapeTargetQueueName, err)
-	}
-
-	cg.start()
-}
-
 func (cg *configGenerator) start() {
 	expirationTicker := time.NewTicker(15 * time.Second)
 	writeTicker := time.NewTicker(15 * time.Second)
@@ -100,7 +103,7 @@ func buildNatsConn(logger *log.Logger) *nats.Conn {
 
 	var natsServers []string
 	for _, natsHost := range natsHosts {
-		natsServers = append(natsServers, fmt.Sprintf("nats://nats:%s@%s:4222", natsPassword, natsHost))
+		natsServers = append(natsServers, fmt.Sprintf("nats://nats:%s@%s:4224", natsPassword, natsHost))
 	}
 	opts := nats.Options{
 		Servers:           natsServers,
@@ -111,14 +114,38 @@ func buildNatsConn(logger *log.Logger) *nats.Conn {
 		ClosedCB:          closedCB(logger),
 		DisconnectedErrCB: disconnectErrHandler(logger),
 		ReconnectedCB:     reconnectedCB(logger),
+		TLSConfig:         getTLSConfig(),
 	}
 
 	natsConn, err := opts.Connect()
 	if err != nil {
-		logger.Fatalf("Unable to connect to nats servers: %s", err)
+		logger.Fatalf("Unable to connect to nats servers (%s): %s", natsServers, err)
 	}
 
 	return natsConn
+}
+
+func getTLSConfig() *tls.Config {
+	caCert, err := ioutil.ReadFile(appDir + "/certs/nats_ca.crt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	caCertPool := x509.NewCertPool()
+
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		log.Fatal("Failed to load CA certificate from file certs/nats_ca.crt")
+	}
+
+	certKeyPair, err := tls.LoadX509KeyPair(appDir+"/certs/nats.crt", appDir+"/certs/nats.key")
+	if err != nil {
+		log.Fatal("Failed to load key pair")
+	}
+
+	return &tls.Config{
+		RootCAs:      caCertPool,
+		Certificates: []tls.Certificate{certKeyPair},
+	}
 }
 
 func (cg *configGenerator) writeConfigToFile() {
@@ -141,7 +168,7 @@ func (cg *configGenerator) writeConfigToFile() {
 		return
 	}
 
-	if ! cg.configModified(newCfgBytes) {
+	if !cg.configModified(newCfgBytes) {
 		return
 	}
 

@@ -30,6 +30,12 @@ function create_certificates() {
     credhub get -n telegraf_scrape_tls --output-json | jq -r .value.ca > scrape_ca.crt
     credhub get -n telegraf_scrape_tls --output-json | jq -r .value.certificate > scrape.crt
     credhub get -n telegraf_scrape_tls --output-json | jq -r .value.private_key > scrape.key
+
+    nats_ca_name=$(credhub find --name-like nats_ca --output-json | jq -r .credentials[0].name)
+    credhub get --name ${nats_ca_name} --output-json | jq -r .value.ca > nats_ca.crt
+    nats_key_name=$(credhub find --name-like nats_client_cert --output-json | jq -r .credentials[0].name)
+    credhub get --name ${nats_key_name} --output-json | jq -r .value.certificate > nats.crt
+    credhub get --name ${nats_key_name} --output-json | jq -r .value.private_key > nats.key
   popd > /dev/null
 }
 
@@ -38,7 +44,10 @@ function push_telegraf() {
 
   GOOS=linux go build -o confgen
   cf v3-create-app telegraf
-  cf set-env telegraf NATS_HOSTS "$(bosh instances --column Instance --column IPs | grep nats | awk '{print $2}')"
+
+  # nats_host="$(bosh instances --column Instance --column IPs | grep nats | grep -v smoke | awk '{print $2}')"
+  nats_host="nats.service.cf.internal"
+  cf set-env telegraf NATS_HOSTS ${nats_host}
 
   nats_cred_name=$(credhub find --name-like nats_password --output-json | jq -r .credentials[0].name)
   cf set-env telegraf NATS_PASSWORD "$(credhub get --name ${nats_cred_name} --quiet)"
