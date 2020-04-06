@@ -17,19 +17,29 @@ function create_security_group() {
 
 function download_telegraf() {
   telegraf_version=$(curl -s https://api.github.com/repos/influxdata/telegraf/releases/latest | jq -r .tag_name || "1.12.6")
-  telegraf_binary_url="https://dl.influxdata.com/telegraf/releases/telegraf-${telegraf_version}-static_linux_amd64.tar.gz"
-  wget -qO- "$telegraf_binary_url" | tar xvz - --strip=2 telegraf/telegraf
+  telegraf_version_stripped=${telegraf_version#"v"}
+  telegraf_binary_url="https://dl.influxdata.com/telegraf/releases/telegraf-${telegraf_version_stripped}-static_linux_amd64.tar.gz"
+  # TODO: Fix tar step
+  wget -qO- "$telegraf_binary_url" | tar xvz --strip=1 telegraf/
 }
 
 function create_certificates() {
   mkdir -p certs
   pushd certs > /dev/null
+   # Grab the Credhub path of the metric_scraper_ca
     ca_cert_name=$(credhub find -n metric_scraper_ca --output-json | jq -r .credentials[].name | grep cf)
     credhub generate -n telegraf_scrape_tls -t certificate --ca "$ca_cert_name" -c telegraf_scrape_tls
 
     credhub get -n telegraf_scrape_tls --output-json | jq -r .value.ca > scrape_ca.crt
     credhub get -n telegraf_scrape_tls --output-json | jq -r .value.certificate > scrape.crt
     credhub get -n telegraf_scrape_tls --output-json | jq -r .value.private_key > scrape.key
+
+   # Grab the Credhub path of the nats_ca and nats_client_cert
+    nats_ca_name=$(credhub find -n nats_ca --output-json | jq -r .credentials[].name | grep cf)
+    nats_client_name=$(credhub find -n nats_client_cert --output-json | jq -r .credentials[].name | grep cf)
+    credhub get -n "$nats_ca_name" --output-json | jq -r .value.ca > nats_ca.crt
+    credhub get -n "$nats_client_name" --output-json | jq -r .value.certificate > nats.crt
+    credhub get -n "$nats_client_name" --output-json | jq -r .value.private_key > nats.key
   popd > /dev/null
 }
 
@@ -38,7 +48,8 @@ function push_telegraf() {
 
   GOOS=linux go build -o confgen
   cf v3-create-app telegraf
-  cf set-env telegraf NATS_HOSTS "$(bosh instances --column Instance --column IPs | grep nats | awk '{print $2}')"
+  #cf set-env telegraf NATS_HOSTS "$(bosh instances --column Instance --column IPs | grep nats | awk '{print $2}' | grep -v "-")"
+  cf set-env telegraf NATS_HOSTS "nats.service.cf.internal"
 
   nats_cred_name=$(credhub find --name-like nats_password --output-json | jq -r .credentials[0].name)
   cf set-env telegraf NATS_PASSWORD "$(credhub get --name ${nats_cred_name} --quiet)"
@@ -48,7 +59,7 @@ function push_telegraf() {
 }
 
 pushd ${telegraf_dir} > /dev/null
-  download_telegraf
+#  download_telegraf
   create_security_group
   create_certificates
   push_telegraf

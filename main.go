@@ -1,10 +1,9 @@
 package main
 
 import (
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
-	"github.com/influxdata/toml"
-	"github.com/nats-io/nats.go"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,12 +14,17 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/influxdata/toml"
+	"github.com/nats-io/nats.go"
+	"gopkg.in/yaml.v2"
 )
 
 const (
 	ScrapeTargetQueueName = "metrics.scrape_targets"
 	appDir                = "/home/vcap/app"
 	telegrafConfigDir     = appDir + "/telegraf.d"
+	certsDir              = appDir + "/certs"
 )
 
 var cfInstanceIP = os.Getenv("CF_INSTANCE_IP")
@@ -76,7 +80,6 @@ func main() {
 	if err != nil {
 		logger.Fatalf("failed to subscribe to %s: %s", ScrapeTargetQueueName, err)
 	}
-
 	cg.start()
 }
 
@@ -100,7 +103,7 @@ func buildNatsConn(logger *log.Logger) *nats.Conn {
 
 	var natsServers []string
 	for _, natsHost := range natsHosts {
-		natsServers = append(natsServers, fmt.Sprintf("nats://nats:%s@%s:4222", natsPassword, natsHost))
+		natsServers = append(natsServers, fmt.Sprintf("nats://nats:%s@%s:4224", natsPassword, natsHost))
 	}
 	opts := nats.Options{
 		Servers:           natsServers,
@@ -111,6 +114,7 @@ func buildNatsConn(logger *log.Logger) *nats.Conn {
 		ClosedCB:          closedCB(logger),
 		DisconnectedErrCB: disconnectErrHandler(logger),
 		ReconnectedCB:     reconnectedCB(logger),
+		TLSConfig:         getTLSConfig(),
 	}
 
 	natsConn, err := opts.Connect()
@@ -121,14 +125,36 @@ func buildNatsConn(logger *log.Logger) *nats.Conn {
 	return natsConn
 }
 
+func getTLSConfig() *tls.Config {
+	caCert, err := ioutil.ReadFile(certsDir + "/nats_ca.crt")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	caCertPool := x509.NewCertPool()
+	if !caCertPool.AppendCertsFromPEM(caCert) {
+		log.Fatalf("Failed to load CA certificate from file %s", certsDir+"/nats_ca.crt")
+	}
+
+	cert, err := tls.LoadX509KeyPair(certsDir+"nats.crt", certsDir+"nats.key")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		RootCAs:      caCertPool,
+	}
+}
+
 func (cg *configGenerator) writeConfigToFile() {
 	urls := cg.buildScrapeUrls()
 
 	cfg := PromInputConfig{
 		URLs:               urls,
-		TLSCA:              appDir + "/certs/scrape_ca.crt",
-		TLSCert:            appDir + "/certs/scrape.crt",
-		TLSKey:             appDir + "/certs/scrape.key",
+		TLSCA:              appDir + "/scrape_ca.crt",
+		TLSCert:            certsDir + "/scrape.crt",
+		TLSKey:             certsDir + "/scrape.key",
 		InsecureSkipVerify: true,
 	}
 
@@ -141,7 +167,7 @@ func (cg *configGenerator) writeConfigToFile() {
 		return
 	}
 
-	if ! cg.configModified(newCfgBytes) {
+	if !cg.configModified(newCfgBytes) {
 		return
 	}
 

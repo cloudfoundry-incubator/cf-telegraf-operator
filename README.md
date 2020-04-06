@@ -1,4 +1,9 @@
 # CF-pushable Telegraf
+This provides the Telegraf binary as a cf-pushable application and includes a Telegraf config generator sidecar.
+
+The Telegraf config generator produces a Telegraf config with the Prometheus input plugin using metrics endpoints
+published to NATs. This config gets regenerated every 15 seconds to keep up-to-date with all the metrics endpoints and
+restarts Telegraf to read this new config.
 
 ## Minimum Requirements
 * BOSH CLI v6.1.1
