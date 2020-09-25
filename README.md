@@ -3,12 +3,18 @@
 ## Overview
 This repo provides a reference architecture allowing Cloud Foundry users to leverage
 [agent based architecture](https://github.com/cloudfoundry/metrics-discovery-release/tree/develop/docs) for collecting
-metrics. It is provided for reference only and is not intended to be used in production. 
+metrics. It is provided for reference only and is not intended to be used in production.
+
+This examples utilizes the [metrics-discovery-release](https://github.com/cloudfoundry/metrics-discovery-release)
+to gather all the component metrics endpoints published to the NATs queue
+"metrics.scrape_targets".
 
 ## Minimum Requirements
 * BOSH CLI v6.1.1
 * CF CLI v6.47.0
 * CF Deployment v12.21.0
+  NOTE: This example will not with in a TAS environment due how certificates
+  are managed in Ops Manager
 * Credhub CLI version 2.5.3
 
 ## Usage
@@ -18,8 +24,8 @@ metrics. It is provided for reference only and is not intended to be used in pro
 
 ## Scaling
 Scaling of telegraf can be handled directly by Diego. That said, this implementation will not
-ensure "only once" delivery. Scaling to two instances will result in duplicate metrics, three 
-instances will triple the metrics etc. 
+ensure "only once" delivery. Scaling to two instances will result in duplicate metrics, three
+instances will triple the metrics etc.
 
 #### Security Group Restrictions
 Due to application security groups, Telegraf cannot scrape the Diego Cell it is running on.
@@ -37,5 +43,3 @@ Just replace `my-output-plugin` with the name of your output e.g. datadog.
 ```
 
 If this number is below 99%, try increasing the `metric_buffer_limit`.
-
-
