@@ -2,9 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/influxdata/toml"
-	"github.com/nats-io/nats.go"
-	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
 	"net"
@@ -15,6 +12,10 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/influxdata/toml"
+	"github.com/nats-io/nats.go"
+	"gopkg.in/yaml.v2"
 )
 
 const (
@@ -37,6 +38,7 @@ type PromInputConfig struct {
 	TLSCert            string `toml:"tls_cert"`
 	TLSKey             string `toml:"tls_key"`
 	InsecureSkipVerify bool   `toml:"insecure_skip_verify"`
+	MetricVersion      int    `toml:"metric_version"`
 }
 
 type target struct {
@@ -58,7 +60,7 @@ type configGenerator struct {
 }
 
 func main() {
-	logger := log.New(os.Stderr, "nats: ", 0)
+	logger := log.New(os.Stderr, "telegraf-config-generator: ", 0)
 
 	err := os.Mkdir(telegrafConfigDir, os.ModePerm)
 	if err != nil {
@@ -130,6 +132,7 @@ func (cg *configGenerator) writeConfigToFile() {
 		TLSCert:            appDir + "/certs/scrape.crt",
 		TLSKey:             appDir + "/certs/scrape.key",
 		InsecureSkipVerify: true,
+		MetricVersion:      2,
 	}
 
 	newCfgBytes, err := toml.Marshal(&TelegrafConfig{
@@ -141,7 +144,7 @@ func (cg *configGenerator) writeConfigToFile() {
 		return
 	}
 
-	if ! cg.configModified(newCfgBytes) {
+	if !cg.configModified(newCfgBytes) {
 		return
 	}
 

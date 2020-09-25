@@ -12,10 +12,17 @@ to gather all the component metrics endpoints published to the NATs queue
 ## Minimum Requirements
 * BOSH CLI v6.1.1
 * CF CLI v6.47.0
-* CF Deployment v12.21.0
-  NOTE: This example will not with in a TAS environment due how certificates
-  are managed in Ops Manager
+* CF Deployment v12.21.0 **NOTE: This example will not with in a TAS environment due how certificates
+  are managed in Ops Manager**
 * Credhub CLI version 2.5.3
+
+## Components
+There are two components: `telegraf` and `telegraf-config-sidecar`.
+
+The `telegraf-config-sidecar` will generate the Prometheus input config from the
+metrics endpoints it gets from the NATs queue and add that to the telegraf configuration.
+The NATs queue is checked every 15 seconds to see if any updates are needed to the input config.
+Every 45 seconds, the the sidecar restarts telegraf to pick up these new metrics endpoints.
 
 ## Usage
 1. Add output plugin(s) to telegraf.conf
