@@ -1,3 +1,4 @@
+# NOTE: This repository is deprecated. Please see examples in [metrics-discovery-release](https://github.com/cloudfoundry/metrics-discovery-release)
 # CF-pushable Telegraf
 
 ## Overview
